@@ -1,8 +1,8 @@
 import Head from "next/head"
-import { GetStaticPropsResult } from "next"
+import { GetServerSidePropsResult } from "next"
 import { DrupalNode } from "next-drupal"
 
-import { drupal } from "lib/drupal"
+import { cacheAwareStore } from "lib/drupal"
 import { Layout } from "components/layout"
 import { NodeArticleTeaser } from "components/node--article--teaser"
 
@@ -37,21 +37,24 @@ export default function IndexPage({ nodes }: IndexPageProps) {
   )
 }
 
-export async function getStaticProps(
+// Using SSR so that page will be re-rendered when edge cache is purged
+export async function getServerSideProps(
   context
-): Promise<GetStaticPropsResult<IndexPageProps>> {
-  const nodes = await drupal.getResourceCollectionFromContext<DrupalNode[]>(
-    "node--article",
-    context,
-    {
-      params: {
-        "filter[status]": 1,
-        "fields[node--article]": "title,path,field_image,uid,created",
-        include: "field_image,uid",
-        sort: "-created",
-      },
-    }
-  )
+): Promise<GetServerSidePropsResult<{ nodes: unknown; }>> { // TODO: Type could be improved here
+  const params = new URLSearchParams();
+  params.append('filter[status]', '1');
+  params.append('fields[node--article]', 'title,path,field_image,uid,created');
+  params.append('include', 'field_image,uid');
+  params.append('sort', '-created');
+
+  // Provides a similar dataset to Next for Drupal client and automatically
+  // bubbles up Pantheon compatible edge cache keys (Surrogate-Key header)
+  const nodes = await cacheAwareStore.getObject({
+		objectName: 'node--article',
+		res: context.res,
+    params: params.toString(),
+    refresh: true,
+	});
 
   return {
     props: {
